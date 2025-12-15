@@ -7,13 +7,17 @@
 use std::sync::Arc;
 use sycamore::prelude::*;
 use wasm_bindgen::prelude::*;
+use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::spawn_local;
 use rapace::{RpcSession, WebSocketTransport};
 use hindsight_protocol::*;
 
 mod components;
+mod routing;
+mod navigation;
 
 use components::*;
+use navigation::{NavigationState, TabId};
 
 /// Main entry point - renders the Hindsight app
 #[wasm_bindgen(start)]
@@ -35,6 +39,9 @@ fn App() -> View {
     let connected = create_signal(false);
     let connection_status = create_signal("Connecting...".to_string());
 
+    // Navigation state
+    let nav_state = NavigationState::new();
+
     // Trace data
     let traces = create_signal(Vec::<TraceSummary>::new());
     let filtered_traces = create_signal(Vec::<TraceSummary>::new());
@@ -50,13 +57,50 @@ fn App() -> View {
     let total_traces = create_signal(0usize);
     let shown_traces = create_signal(0usize);
 
+    // Set up hashchange listener for browser back/forward
+    {
+        let nav_state = nav_state.clone();
+        let window = web_sys::window().expect("no global window");
+
+        let closure = Closure::wrap(Box::new(move |_: web_sys::Event| {
+            let route = routing::get_current_route();
+            nav_state.current_route.set(route.clone());
+
+            // Update active tab based on route
+            let tab = TabId::from_route(&route);
+            nav_state.active_tab.set(tab);
+
+            // Update selected items based on route
+            match &route {
+                routing::Route::TraceDetail { trace_id } => {
+                    nav_state.selected_trace_id.set(Some(trace_id.clone()));
+                }
+                _ => {
+                    nav_state.selected_trace_id.set(None);
+                }
+            }
+        }) as Box<dyn FnMut(_)>);
+
+        window
+            .add_event_listener_with_callback("hashchange", closure.as_ref().unchecked_ref())
+            .expect("failed to add hashchange listener");
+
+        // Keep closure alive for the lifetime of the app
+        closure.forget();
+    }
+
     // Initialize Rapace client
+    let available_tabs = nav_state.available_tabs;
     spawn_local(async move {
         match init_client().await {
             Ok(client) => {
                 tracing::info!("Connected to Hindsight via Rapace");
                 connected.set(true);
                 connection_status.set("Connected".to_string());
+
+                // TODO: Service discovery - check for Picante/Rapace introspection
+                // For now, just show Traces tab
+                available_tabs.set(vec![TabId::Traces]);
 
                 // Load initial traces
                 tracing::info!("Requesting trace list with default filter...");
@@ -82,65 +126,87 @@ fn App() -> View {
         }
     });
 
+    let nav_state_for_tab_bar = nav_state.clone();
+    let nav_state_for_list = nav_state.clone();
+    let nav_state_for_detail = nav_state.clone();
+    let is_detail_view = create_memo(move || {
+        nav_state.current_route.with(|route| matches!(route, routing::Route::TraceDetail { .. }))
+    });
+
     view! {
         div(class="app") {
             // Header
-            header(class="header") {
-                h1 {
-                    img(src="/static/logo.svg", alt="hindsight logo")
-                    " hindsight"
-                }
-                div(class="status-badge") {
-                    div(class="status-dot") {}
-                    span { (connection_status.get_clone()) }
-                }
-            }
+            Header(connection_status=connection_status)
 
-            // Main content
+            // Tab bar
+            TabBar(nav_state=nav_state_for_tab_bar)
+
+            // Main content - switches based on route
             div(class="content") {
-                // Sidebar with filters
-                aside(class="sidebar") {
-                    div(class="sidebar-section") {
-                        h2 { "Filters" }
-                        // TODO: Filter components
-                    }
-
-                    div(class="sidebar-section") {
-                        h2 { "Statistics" }
-                        p { "Total Traces: " strong { (total_traces.get()) } }
-                        p { "Shown: " strong { (shown_traces.get()) } }
-                    }
-                }
-
-                // Main panel with trace list
-                main(class="main-panel") {
-                    div(class="panel-header") {
-                        h2 { "Traces" }
-                        button(class="btn") { "Refresh" }
-                    }
-
-                    div(class="trace-list") {
-                        (if filtered_traces.with(|traces| traces.is_empty()) {
-                            view! {
-                                div(class="empty-state") {
-                                    div(class="empty-state-title") { "No traces found" }
-                                    div(class="empty-state-text") {
-                                        "Send some traces from your application to see them here."
-                                    }
-                                }
+                (if is_detail_view.with(|is_detail| *is_detail) {
+                    // Detail view
+                    let trace_id = nav_state_for_detail.selected_trace_id.with(|id| id.clone());
+                    if let Some(trace_id) = trace_id {
+                        view! {
+                            TraceDetail(trace_id=trace_id, nav_state=nav_state_for_detail.clone())
+                        }
+                    } else {
+                        view! {
+                            div(class="placeholder", style="padding: var(--space-6);") {
+                                p { "No trace selected" }
                             }
-                        } else {
-                            view! {
-                                Indexed(
-                                    list=filtered_traces,
-                                    view=|trace| view! {
-                                        TraceCard(trace=trace)
-                                    }
-                                )
-                            }
-                        })
+                        }
                     }
-                }
+                } else {
+                    // List view
+                    view! {
+                        // Sidebar with filters
+                        aside(class="sidebar") {
+                            div(class="sidebar-section") {
+                                h2 { "Filters" }
+                                // TODO: Filter components
+                            }
+
+                            div(class="sidebar-section") {
+                                h2 { "Statistics" }
+                                p { "Total Traces: " strong { (total_traces.get()) } }
+                                p { "Shown: " strong { (shown_traces.get()) } }
+                            }
+                        }
+
+                        // Main panel with trace list
+                        main(class="main-panel") {
+                            div(class="panel-header") {
+                                h2 { "Traces" }
+                                button(class="btn") { "Refresh" }
+                            }
+
+                            div(class="trace-list") {
+                                (if filtered_traces.with(|traces| traces.is_empty()) {
+                                    view! {
+                                        div(class="empty-state") {
+                                            div(class="empty-state-title") { "No traces found" }
+                                            div(class="empty-state-text") {
+                                                "Send some traces from your application to see them here."
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    view! {
+                                        Indexed(
+                                            list=filtered_traces,
+                                            view=|trace| {
+                                                let nav = nav_state_for_list.clone();
+                                                view! {
+                                                    TraceCard(trace=trace, nav_state=nav)
+                                                }
+                                            }
+                                        )
+                                    }
+                                })
+                            }
+                    }
+                })
             }
         }
     }
