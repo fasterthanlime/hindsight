@@ -30,6 +30,7 @@ axum.workspace = true
 hyper = { version = "1", features = ["full"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
 futures = "0.3"
+tower-http = { version = "0.5", features = ["fs"] }
 
 # CLI
 clap.workspace = true

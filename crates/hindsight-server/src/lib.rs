@@ -95,6 +95,7 @@ async fn serve_http_unified(
             }
         }))
         .route("/pkg/*file", get(serve_pkg_file))
+        .nest_service("/static", tower_http::services::ServeDir::new("static"))
         .with_state(service.clone());
 
     let addr = format!("{}:{}", host, port);

@@ -87,8 +87,8 @@ fn App() -> View {
             // Header
             header(class="header") {
                 h1 {
-                    span { "🔍" }
-                    " Hindsight"
+                    img(src="/static/logo.svg", alt="hindsight logo")
+                    " hindsight"
                 }
                 div(class="status-badge") {
                     div(class="status-dot") {}
