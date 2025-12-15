@@ -14,18 +14,22 @@ pub fn TraceCard(TraceCardProps { trace }: TraceCardProps) -> View {
     let type_class = format!("type-{}", trace.trace_type.to_string().to_lowercase());
 
     view! {
-        div(class="trace-card") {
-            div(class="trace-header") {
-                div(class="trace-name") { (trace.root_span_name.clone()) }
-                div(class="trace-duration") { (duration_text) }
-            }
+        div(class="trace-item") {
+            div(class="trace-name") { (trace.root_span_name.clone()) }
+            div(class="trace-duration") { (duration_text) }
             div(class="trace-meta") {
-                span { "🏷️ " (trace.service_name.clone()) }
-                span { "📊 " (trace.span_count) " spans" }
+                div(class="trace-meta-item") {
+                    span(class="trace-meta-label") { "svc" }
+                    span { (trace.service_name.clone()) }
+                }
+                div(class="trace-meta-item") {
+                    span(class="trace-meta-label") { "spans" }
+                    span { (trace.span_count.to_string()) }
+                }
                 (if trace.has_errors {
                     view! {
-                        span(style="color: #ef4444;") {
-                            "⚠️ errors"
+                        div(class="trace-meta-item trace-error-indicator") {
+                            "errors"
                         }
                     }
                 } else {

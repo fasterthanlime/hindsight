@@ -23,7 +23,7 @@ pub fn main() {
     // Initialize tracing-wasm to send Rust logs to browser console
     tracing_wasm::set_as_global_default();
 
-    tracing::info!("🔍 Hindsight WASM starting...");
+    tracing::info!("Hindsight WASM starting");
 
     sycamore::render(|| view! { App {} });
 }
@@ -54,7 +54,7 @@ fn App() -> View {
     spawn_local(async move {
         match init_client().await {
             Ok(client) => {
-                tracing::info!("✅ Connected to Hindsight via Rapace!");
+                tracing::info!("Connected to Hindsight via Rapace");
                 connected.set(true);
                 connection_status.set("Connected".to_string());
 
@@ -62,21 +62,21 @@ fn App() -> View {
                 tracing::info!("Requesting trace list with default filter...");
                 match client.list_traces(TraceFilter::default()).await {
                     Ok(trace_list) => {
-                        tracing::info!("✅ Received {} traces", trace_list.len());
+                        tracing::info!("Received {} traces", trace_list.len());
                         total_traces.set(trace_list.len());
                         shown_traces.set(trace_list.len());
                         traces.set(trace_list.clone());
                         filtered_traces.set(trace_list);
                     }
                     Err(e) => {
-                        tracing::error!("❌ Failed to list traces: {:?}", e);
+                        tracing::error!("Failed to list traces: {:?}", e);
                     }
                 }
 
                 // TODO: Store client for future use
             }
             Err(e) => {
-                tracing::error!("❌ Failed to connect: {:?}", e);
+                tracing::error!("Failed to connect: {:?}", e);
                 connection_status.set("Disconnected".to_string());
             }
         }
@@ -123,7 +123,6 @@ fn App() -> View {
                         (if filtered_traces.with(|traces| traces.is_empty()) {
                             view! {
                                 div(class="empty-state") {
-                                    div(class="empty-state-icon") { "📭" }
                                     div(class="empty-state-title") { "No traces found" }
                                     div(class="empty-state-text") {
                                         "Send some traces from your application to see them here."
