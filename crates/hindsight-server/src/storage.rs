@@ -121,6 +121,9 @@ impl TraceStore {
                 let root_span = trace.spans.iter()
                     .find(|s| s.span_id == trace.root_span_id)?;
 
+                // Classify trace type based on attributes
+                let trace_type = trace.classify_type();
+
                 Some(TraceSummary {
                     trace_id: trace.trace_id,
                     root_span_name: root_span.name.clone(),
@@ -129,6 +132,7 @@ impl TraceStore {
                     duration_nanos: duration,
                     span_count: trace.spans.len(),
                     has_errors,
+                    trace_type,
                 })
             })
             .collect();
@@ -157,26 +161,26 @@ impl TraceStore {
             .collect();
 
         if !spans.is_empty() {
-            let trace = Trace::from_spans(spans);
+            if let Some(trace) = Trace::from_spans(spans) {
+                // Check if trace is complete
+                let is_complete = trace.end_time.is_some()
+                    && trace.spans.iter().all(|s| s.end_time.is_some());
 
-            // Check if trace is complete
-            let is_complete = trace.end_time.is_some()
-                && trace.spans.iter().all(|s| s.end_time.is_some());
-
-            if is_complete {
-                if let Some(duration) = trace.end_time.map(|e| e.0 - trace.start_time.0) {
-                    let _ = self.event_tx.send(TraceEvent::TraceCompleted {
-                        trace_id,
-                        duration_nanos: duration,
-                        span_count: trace.spans.len(),
-                    });
+                if is_complete {
+                    if let Some(duration) = trace.end_time.map(|e| e.0 - trace.start_time.0) {
+                        let _ = self.event_tx.send(TraceEvent::TraceCompleted {
+                            trace_id,
+                            duration_nanos: duration,
+                            span_count: trace.spans.len(),
+                        });
+                    }
                 }
-            }
 
-            self.traces.insert(trace_id, StoredTrace {
-                trace,
-                created_at: SystemTime::now(),
-            });
+                self.traces.insert(trace_id, StoredTrace {
+                    trace,
+                    created_at: SystemTime::now(),
+                });
+            }
         }
     }
 

@@ -79,13 +79,19 @@ pub struct Trace {
 
 impl Trace {
     /// Build a trace from a flat list of spans
-    pub fn from_spans(mut spans: Vec<Span>) -> Self {
+    pub fn from_spans(mut spans: Vec<Span>) -> Option<Self> {
+        if spans.is_empty() {
+            return None;
+        }
+
         spans.sort_by_key(|s| s.start_time.0);
 
         let trace_id = spans[0].trace_id;
+
+        // Find root span (one with no parent)
         let root_span = spans.iter()
-            .find(|s| s.parent_span_id.is_none())
-            .expect("no root span found");
+            .find(|s| s.parent_span_id.is_none())?;
+
         let root_span_id = root_span.span_id;
         let start_time = root_span.start_time;
 
@@ -93,13 +99,13 @@ impl Trace {
             .filter_map(|s| s.end_time)
             .max_by_key(|t| t.0);
 
-        Self {
+        Some(Self {
             trace_id,
             spans,
             root_span_id,
             start_time,
             end_time,
-        }
+        })
     }
 
     /// Get children of a given span
@@ -107,6 +113,74 @@ impl Trace {
         self.spans.iter()
             .filter(|s| s.parent_span_id == Some(span_id))
             .collect()
+    }
+
+    /// Classify trace type based on span attributes
+    pub fn classify_type(&self) -> TraceType {
+        let mut has_picante = false;
+        let mut has_rapace = false;
+        let mut has_dodeca = false;
+
+        for span in &self.spans {
+            // Check for Picante attributes
+            if span.attributes.contains_key("picante.query") {
+                has_picante = true;
+            }
+
+            // Check for Rapace RPC attributes
+            if let Some(AttributeValue::String(s)) = span.attributes.get("rpc.system") {
+                if s == "rapace" {
+                    has_rapace = true;
+                }
+            }
+
+            // Check for Dodeca attributes
+            if span.attributes.contains_key("dodeca.build") {
+                has_dodeca = true;
+            }
+        }
+
+        // Count how many framework types detected
+        let count = [has_picante, has_rapace, has_dodeca]
+            .iter()
+            .filter(|&&x| x)
+            .count();
+
+        match count {
+            0 => TraceType::Generic,
+            1 => {
+                if has_picante {
+                    TraceType::Picante
+                } else if has_rapace {
+                    TraceType::Rapace
+                } else {
+                    TraceType::Dodeca
+                }
+            }
+            _ => TraceType::Mixed,
+        }
+    }
+}
+
+/// Type of trace based on framework detection
+#[derive(Clone, Debug, Facet, Serialize, Deserialize)]
+#[repr(u8)]
+pub enum TraceType {
+    /// Generic trace with no special attributes
+    Generic,
+    /// Picante query execution trace
+    Picante,
+    /// Rapace RPC trace
+    Rapace,
+    /// Dodeca build trace
+    Dodeca,
+    /// Mixed trace with multiple framework types
+    Mixed,
+}
+
+impl Default for TraceType {
+    fn default() -> Self {
+        Self::Generic
     }
 }
 
@@ -120,6 +194,7 @@ pub struct TraceSummary {
     pub duration_nanos: Option<u64>,
     pub span_count: usize,
     pub has_errors: bool,
+    pub trace_type: TraceType,
 }
 
 /// Filter for querying traces

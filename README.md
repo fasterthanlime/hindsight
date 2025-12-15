@@ -5,9 +5,9 @@
 [![experimental](https://img.shields.io/badge/experimental-yes-orange)](#status)
 [![do-not-use](https://img.shields.io/badge/do%20not%20use-yet-red)](#status)
 
-> DO NOT USE (YET): Hindsight is **experimental** and the API/architecture are in flux.
+> DO NOT USE (YET): hindsight is **experimental** and the api/architecture are in flux.
 
-**Unified observability hub for Bearcove tools.** Distributed tracing + live introspection over **Rapace RPC**.
+**Unified observability hub for Bearcove tools.** Distributed tracing + live introspection over **rapace rpc**.
 
 ## Status
 
@@ -15,52 +15,52 @@ Active development; expect breaking changes.
 
 - Plan/spec: [`PLAN.md`](./PLAN.md)
 - Archived drafts: [`docs/archive/PLAN_v1.md`](./docs/archive/PLAN_v1.md), [`docs/archive/PLAN_v2_picante.md`](./docs/archive/PLAN_v2_picante.md)
-- Current plan uses a **single HTTP port** with **Upgrade** to select transport (Rapace vs WebSocket) + `GET /` for the UI bootstrap page.
+- Current plan uses a **single HTTP port** with **Upgrade** to select transport (rapace vs websocket) + `GET /` for the ui bootstrap page.
 
-## What is Hindsight?
+## what is hindsight?
 
-Hindsight is a **trace collection server + UI** that:
-- collects W3C Trace Context spans from apps (via Rapace RPC transports),
-- discovers app capabilities at runtime (service introspection),
-- and adapts its UI dynamically (generic trace views + framework-specific views).
+hindsight will be a **trace collection server + ui** that:
+- will collect W3C Trace Context spans from apps (via rapace rpc transports),
+- will discover app capabilities at runtime (service introspection),
+- and will adapt its ui dynamically (generic trace views + framework-specific views).
 
-The goal is one place to debug:
-- **Rapace** (RPC): topology, transport metrics, active calls
-- **Picante** (incremental): query graphs, cache hits/misses/validation
-- **Dodeca** (build): build progress, pages, template stats
+the goal is one place to debug:
+- [`rapace`](https://rapace.bearcove.eu/) (rpc): topology/transport/active calls (see: [architecture](https://rapace.bearcove.eu/guide/architecture/), [cells](https://rapace.bearcove.eu/guide/cells/))
+- [`picante`](https://picante.bearcove.eu/) (incremental): query graphs + cache hit/miss/validation (see: [architecture](https://picante.bearcove.eu/guide/architecture/), [guide](https://picante.bearcove.eu/guide/))
+- [`dodeca`](https://dodeca.bearcove.eu/) (build): build progress/pages/template stats (see: [features](https://dodeca.bearcove.eu/guide/features/), [query reference](https://dodeca.bearcove.eu/internals/queries/), [template engine](https://dodeca.bearcove.eu/internals/templates/), [debugging templates](https://dodeca.bearcove.eu/guide/debugging-templates/), [plugins](https://dodeca.bearcove.eu/internals/plugins/))
 
 ## Philosophy
 
-**Pure Rapace.** One protocol end-to-end. HTTP exists only to serve a tiny static page that loads the browser UI; trace data flows over Rapace.
+**pure rapace.** one protocol end-to-end. http exists only to serve a tiny static page that loads the browser ui; trace data flows over rapace.
 
-**Extensible by discovery.** Apps expose introspection services; Hindsight calls `ServiceIntrospection.list_services()` and enables views accordingly.
+**extensible by discovery.** apps expose introspection services; hindsight calls `ServiceIntrospection.list_services()` and enables views accordingly.
 
-**Ephemeral by default.** In-memory storage with TTL (persistence/export are planned).
+**ephemeral by default.** in-memory storage with ttl (persistence/export are planned).
 
-**Avoid self-tracing loops.** Hindsight’s own Rapace sessions are untraced; tracing in apps is explicit opt-in.
+**avoid self-tracing loops.** hindsight’s own rapace sessions are untraced; tracing in apps is explicit opt-in.
 
-## Integration with Bearcove Projects
+## integration with bearcove projects
 
-Hindsight’s plan is to provide **generic tracing** plus **framework-specific views** when the app exposes introspection services.
+hindsight aims to provide **generic tracing** plus **framework-specific views** when the app exposes introspection services.
 
-### Rapace (RPC Framework)
+### rapace (rpc framework)
 
 ```rust
 use rapace::RpcSession;
 use hindsight::Tracer;
 
-// Create a tracer that exports spans to Hindsight.
+// Create a tracer that exports spans to hindsight.
 // (Transport setup omitted here for brevity.)
 let tracer = /* ... */;
 
 let session = RpcSession::new(transport)
     .with_tracer(tracer); // Automatic RPC span tracking!
 
-// All RPC calls now appear in Hindsight
+// All RPC calls now appear in hindsight
 session.call(method_id, payload).await?;
 ```
 
-### Picante (Incremental Computation)
+### picante (incremental computation)
 
 ```rust
 use picante::Runtime;
@@ -74,7 +74,7 @@ let runtime = Runtime::new()
 let result = db.my_query.get(&db, key).await?;
 ```
 
-### Dodeca (Static Site Generator)
+### dodeca (static site generator)
 
 ```rust
 use hindsight::Tracer;
@@ -88,11 +88,13 @@ let tracer = /* ... */;
 ## Architecture
 
 ```
-Apps (native / WASM)                     Hindsight (hub)
+NOTE: diagram is aspirational; current code does not implement the full hub/discovery/ui.
+
+Apps (native / WASM)                     hindsight (hub)
 ┌─────────────────────────┐              ┌──────────────────────────┐
-│ App emits spans          │──Rapace RPC─▶│ HindsightService         │
+│ App emits spans          │──rapace RPC─▶│ hindsightservice         │
 │ + exposes introspection  │              │ - ingest_spans           │
-│ services (optional)      │◀─Rapace RPC──│ - list/get/stream traces │
+│ services (optional)      │◀─rapace RPC──│ - list/get/stream traces │
 └─────────────────────────┘              │                          │
                                          │ UI adapts based on:      │
                                          │ - ServiceIntrospection   │
@@ -115,11 +117,11 @@ crates/
 ## Features
 
 - ✅ **W3C Trace Context** (`traceparent`/`tracestate`)
-- ✅ **Pure Rapace RPC ingestion** (TCP + WebSocket transport)
+- ✅ **Pure rapace rpc ingestion** (tcp + websocket transport)
 - ✅ **Ephemeral in-memory store** (TTL)
-- 🚧 **Service discovery driven UI** (planned: dynamic tabs per app capabilities)
-- 🚧 **Framework-specific views** (Picante/Rapace/Dodeca via introspection)
-- 🚧 **Persistence / sampling / export** (planned)
+- 🚧 **Service discovery driven ui** (planned: dynamic tabs per app capabilities; not implemented yet)
+- 🚧 **Framework-specific views** (planned: picante/rapace/dodeca via introspection; not implemented yet)
+- 🚧 **Persistence / sampling / export** (planned; not implemented yet)
 
 ## Links
 
@@ -136,19 +138,21 @@ crates/
 ## Example: Distributed Trace Across Systems
 
 ```rust
+// mockup: this is the kind of cross-tool trace hindsight aims to show (not working yet)
+
 // In your web server
 let span = tracer.span("handle_request").start();
 
 // Make an RPC call (trace context auto-propagated)
 let result = rpc_client.call(method, payload).await?;
 
-// That RPC triggers a Picante query in another process
+// That RPC triggers a picante query in another process
 // All show up in ONE trace:
 //
 // handle_request (50ms)
 //   ├─ RPC: calculate (40ms)
-//   │   ├─ Picante: load_data (5ms, cache hit)
-//   │   └─ Picante: compute (35ms, recomputed)
+//   │   ├─ picante: load_data (5ms, cache hit)
+//   │   └─ picante: compute (35ms, recomputed)
 //   └─ format_response (10ms)
 
 span.end();

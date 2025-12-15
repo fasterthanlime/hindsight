@@ -7,6 +7,10 @@ repository.workspace = true
 authors.workspace = true
 description = "Standalone server for collecting and visualizing distributed traces"
 
+[lib]
+name = "hindsight_server"
+path = "src/lib.rs"
+
 [[bin]]
 name = "hindsight"
 path = "src/main.rs"
@@ -21,6 +25,9 @@ tokio-tungstenite = "0.26"
 
 # HTTP server (only for serving static HTML)
 axum.workspace = true
+hyper = { version = "1", features = ["full"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+futures = "0.3"
 
 # CLI
 clap.workspace = true

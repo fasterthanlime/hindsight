@@ -14,5 +14,8 @@ rapace.workspace = true
 tokio.workspace = true
 thiserror.workspace = true
 
+[dev-dependencies]
+hindsight-server = { path = "../hindsight-server" }
+
 [features]
 default = []
