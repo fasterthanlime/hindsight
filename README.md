@@ -1,12 +1,21 @@
 # hindsight
 
 [![MIT + Apache 2.0](https://img.shields.io/badge/license-MIT%20%2B%20Apache%202.0-blue)](./LICENSE-MIT)
+[![CI](https://github.com/bearcove/hindsight/actions/workflows/ci.yml/badge.svg)](https://github.com/bearcove/hindsight/actions/workflows/ci.yml)
+[![experimental](https://img.shields.io/badge/experimental-yes-orange)](#status)
+[![do-not-use](https://img.shields.io/badge/do%20not%20use-yet-red)](#status)
+
+> DO NOT USE (YET): Hindsight is **experimental** and the API/architecture are in flux.
 
 **Unified observability hub for Bearcove tools.** Distributed tracing + live introspection over **Rapace RPC**.
 
 ## Status
 
-This repo is under active development. The README is the short synthesis of the current plan; `PLAN.md` is the detailed design doc/spec.
+Active development; expect breaking changes.
+
+- Plan/spec: [`PLAN.md`](./PLAN.md)
+- Archived drafts: [`docs/archive/PLAN_v1.md`](./docs/archive/PLAN_v1.md), [`docs/archive/PLAN_v2_picante.md`](./docs/archive/PLAN_v2_picante.md)
+- Current plan uses a **single HTTP port** with **Upgrade** to select transport (Rapace vs WebSocket) + `GET /` for the UI bootstrap page.
 
 ## What is Hindsight?
 
@@ -29,29 +38,6 @@ The goal is one place to debug:
 **Ephemeral by default.** In-memory storage with TTL (persistence/export are planned).
 
 **Avoid self-tracing loops.** Hindsight’s own Rapace sessions are untraced; tracing in apps is explicit opt-in.
-
-## Quick Start
-
-### Run locally (recommended for now)
-
-```bash
-cargo run -p hindsight-server -- serve
-```
-
-Defaults:
-- **Single port**: `http://127.0.0.1:1990`
-  - `GET /` serves the web UI bootstrap page
-  - `Upgrade: websocket` upgrades to WebSocket → Rapace RPC (browser/WASM)
-  - `Upgrade: rapace` upgrades to raw Rapace (native clients)
-
-### Install the server binary (local path)
-
-```bash
-cargo install --path crates/hindsight-server
-hindsight serve
-```
-
-Then open `http://127.0.0.1:1990`.
 
 ## Integration with Bearcove Projects
 
@@ -135,6 +121,18 @@ crates/
 - 🚧 **Framework-specific views** (Picante/Rapace/Dodeca via introspection)
 - 🚧 **Persistence / sampling / export** (planned)
 
+## Links
+
+- W3C Trace Context: https://www.w3.org/TR/trace-context/
+- OpenTelemetry: https://opentelemetry.io/
+- HTTP Upgrade (`101 Switching Protocols`): https://developer.mozilla.org/en-US/docs/Web/HTTP/Protocol_upgrade_mechanism
+- WebSocket protocol (RFC 6455): https://www.rfc-editor.org/rfc/rfc6455
+- Workspace: `Cargo.toml`
+- Workspace crates: `crates/`
+- Protocol types: `crates/hindsight-protocol/src/trace_context.rs`, `crates/hindsight-protocol/src/span.rs`, `crates/hindsight-protocol/src/service.rs`
+- Server entrypoint (router + upgrade handlers): `crates/hindsight-server/src/main.rs`
+- In-memory store: `crates/hindsight-server/src/storage.rs`
+
 ## Example: Distributed Trace Across Systems
 
 ```rust
@@ -173,13 +171,9 @@ cargo test --workspace
 cargo run -p hindsight-server -- serve
 ```
 
-**Plan/spec docs:**
-- `UNIFIED_PLAN.md` (short synthesis)
-- `PLAN.md` (detailed design doc/spec)
-
 ## Contributing
 
-See `PLAN.md` for the detailed design doc/spec, and `UNIFIED_PLAN.md` for the short synthesis.
+See `PLAN.md` for the detailed design doc/spec.
 
 Contributions welcome! Please open issues and PRs.
 
