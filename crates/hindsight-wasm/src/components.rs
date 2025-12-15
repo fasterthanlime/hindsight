@@ -5,28 +5,31 @@ use hindsight_protocol::*;
 
 /// TraceCard component - displays a single trace summary
 #[component]
-pub fn TraceCard<'a, G: Html>(cx: Scope<'a>, props: TraceCardProps<'a>) -> View<G> {
-    let trace = props.trace;
-    let duration_ms = trace.duration_nanos as f64 / 1_000_000.0;
+pub fn TraceCard(TraceCardProps { trace }: TraceCardProps) -> View {
+    let duration_text = trace
+        .duration_nanos
+        .map(|nanos| format!("{:.2}ms", nanos as f64 / 1_000_000.0))
+        .unwrap_or_else(|| "—".to_string());
+
     let type_class = format!("type-{}", trace.trace_type.to_string().to_lowercase());
 
-    view! { cx,
+    view! {
         div(class="trace-card") {
             div(class="trace-header") {
                 div(class="trace-name") { (trace.root_span_name.clone()) }
-                div(class="trace-duration") { (format!("{:.2}ms", duration_ms)) }
+                div(class="trace-duration") { (duration_text) }
             }
             div(class="trace-meta") {
                 span { "🏷️ " (trace.service_name.clone()) }
                 span { "📊 " (trace.span_count) " spans" }
-                (if trace.error_count > 0 {
-                    view! { cx,
+                (if trace.has_errors {
+                    view! {
                         span(style="color: #ef4444;") {
-                            "⚠️ " (trace.error_count) " errors"
+                            "⚠️ errors"
                         }
                     }
                 } else {
-                    view! { cx, }
+                    view! {}
                 })
                 span(class=format!("trace-type-badge {}", type_class)) {
                     (trace.trace_type.to_string())
@@ -37,6 +40,6 @@ pub fn TraceCard<'a, G: Html>(cx: Scope<'a>, props: TraceCardProps<'a>) -> View<
 }
 
 #[derive(Props)]
-pub struct TraceCardProps<'a> {
-    pub trace: &'a TraceSummary,
+pub struct TraceCardProps {
+    pub trace: TraceSummary,
 }

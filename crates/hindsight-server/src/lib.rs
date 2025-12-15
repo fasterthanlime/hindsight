@@ -93,8 +93,7 @@ async fn serve_http_unified(
                 handle_root(headers, ws, req, service.clone())
             }
         }))
-        .route("/rapace.js", get(serve_rapace_js))
-        .route("/app.js", get(serve_js))
+        .route("/pkg/*file", get(serve_pkg_file))
         .with_state(service);
 
     let addr = format!("{}:{}", host, port);
@@ -285,20 +284,37 @@ async fn handle_rapace_connection(upgraded: Upgraded, service: Arc<HindsightServ
     }
 }
 
-/// Serve Rapace JavaScript client
-async fn serve_rapace_js() -> impl IntoResponse {
-    let js = include_str!("ui/rapace.js");
-    Response::builder()
-        .header("Content-Type", "application/javascript")
-        .body(js.to_string())
-        .unwrap()
-}
+/// Serve WASM package files
+async fn serve_pkg_file(axum::extract::Path(file): axum::extract::Path<String>) -> impl IntoResponse {
+    use axum::http::StatusCode;
 
-/// Serve main app JavaScript
-async fn serve_js() -> impl IntoResponse {
-    let js = include_str!("ui/app.js");
-    Response::builder()
-        .header("Content-Type", "application/javascript")
-        .body(js.to_string())
-        .unwrap()
+    // Map file extensions to content types
+    let content_type = if file.ends_with(".wasm") {
+        "application/wasm"
+    } else if file.ends_with(".js") {
+        "application/javascript"
+    } else if file.ends_with(".json") {
+        "application/json"
+    } else {
+        "text/plain"
+    };
+
+    // Read file from pkg directory
+    // Try multiple possible paths (depends on where cargo run is executed from)
+    let possible_paths = [
+        format!("pkg/{}", file),      // From workspace root
+        format!("../../pkg/{}", file), // From target/debug
+        format!("../../../pkg/{}", file), // From target/debug/deps
+    ];
+
+    for pkg_path in &possible_paths {
+        if let Ok(bytes) = std::fs::read(pkg_path) {
+            return (
+                [(axum::http::header::CONTENT_TYPE, content_type)],
+                bytes
+            ).into_response();
+        }
+    }
+
+    StatusCode::NOT_FOUND.into_response()
 }

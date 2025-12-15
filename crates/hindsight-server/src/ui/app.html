@@ -383,77 +383,17 @@
     </style>
 </head>
 <body>
-    <div class="app">
-        <div class="header">
-            <h1>
-                <span>🔍</span>
-                Hindsight
-            </h1>
-            <div class="status-badge">
-                <div class="status-dot"></div>
-                <span id="connectionStatus">Connecting...</span>
-            </div>
-        </div>
+    <!-- Sycamore will render the app here -->
 
-        <div class="content">
-            <div class="sidebar">
-                <div class="sidebar-section">
-                    <h2>Filters</h2>
-                    <div class="filter-group">
-                        <label for="serviceFilter">Service</label>
-                        <select id="serviceFilter">
-                            <option value="">All Services</option>
-                        </select>
-                    </div>
-                    <div class="filter-group">
-                        <label for="typeFilter">Trace Type</label>
-                        <select id="typeFilter">
-                            <option value="">All Types</option>
-                            <option value="Generic">Generic</option>
-                            <option value="Picante">Picante</option>
-                            <option value="Rapace">Rapace</option>
-                            <option value="Dodeca">Dodeca</option>
-                            <option value="Mixed">Mixed</option>
-                        </select>
-                    </div>
-                    <div class="filter-group">
-                        <label for="minDuration">Min Duration (ms)</label>
-                        <input type="number" id="minDuration" placeholder="0" min="0">
-                    </div>
-                    <div class="filter-group">
-                        <label for="searchQuery">Search</label>
-                        <input type="text" id="searchQuery" placeholder="Search traces...">
-                    </div>
-                </div>
+    <script type="module">
+        import init from '/pkg/hindsight_wasm.js';
 
-                <div class="sidebar-section">
-                    <h2>Statistics</h2>
-                    <div id="stats" style="font-size: 0.875rem; color: #94a3b8;">
-                        <p>Total Traces: <strong id="totalTraces">0</strong></p>
-                        <p>Shown: <strong id="shownTraces">0</strong></p>
-                    </div>
-                </div>
-            </div>
+        async function run() {
+            await init();
+            console.log('🔍 Hindsight WASM loaded and running!');
+        }
 
-            <div class="main-panel">
-                <div class="panel-header">
-                    <h2>Traces</h2>
-                    <button class="btn" id="refreshBtn">Refresh</button>
-                </div>
-                <div class="trace-list" id="traceList">
-                    <div class="empty-state">
-                        <div class="empty-state-icon">📭</div>
-                        <div class="empty-state-title">No traces yet</div>
-                        <div class="empty-state-text">
-                            Send some traces from your application to see them here.
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <script src="/rapace.js"></script>
-    <script src="/app.js"></script>
+        run();
+    </script>
 </body>
 </html>

@@ -5,7 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::trace_context::{TraceId, SpanId};
 
 /// Timestamp in nanoseconds since UNIX epoch
-#[derive(Clone, Copy, Debug, Facet)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Facet)]
 pub struct Timestamp(pub u64);
 
 impl Timestamp {
@@ -162,7 +162,7 @@ impl Trace {
 }
 
 /// Type of trace based on framework detection
-#[derive(Clone, Debug, Facet)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Facet)]
 #[repr(u8)]
 pub enum TraceType {
     /// Generic trace with no special attributes
@@ -196,7 +196,7 @@ impl std::fmt::Display for TraceType {
 }
 
 /// Summary of a trace (for listing)
-#[derive(Clone, Debug, Facet)]
+#[derive(Clone, Debug, PartialEq, Facet)]
 pub struct TraceSummary {
     pub trace_id: TraceId,
     pub root_span_name: String,

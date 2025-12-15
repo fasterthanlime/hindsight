@@ -22,34 +22,30 @@ pub fn main() {
 
     web_sys::console::log_1(&"🔍 Hindsight WASM starting...".into());
 
-    sycamore::render(|cx| {
-        view! { cx,
-            App {}
-        }
-    });
+    sycamore::render(|| view! { App {} });
 }
 
 /// Root application component
 #[component]
-fn App<G: Html>(cx: Scope) -> View<G> {
+fn App() -> View {
     // Connection state
-    let connected = create_signal(cx, false);
-    let connection_status = create_signal(cx, "Connecting...".to_string());
+    let connected = create_signal(false);
+    let connection_status = create_signal("Connecting...".to_string());
 
     // Trace data
-    let traces = create_signal(cx, Vec::<TraceSummary>::new());
-    let filtered_traces = create_signal(cx, Vec::<TraceSummary>::new());
-    let selected_trace = create_signal(cx, Option::<Trace>::None);
+    let traces = create_signal(Vec::<TraceSummary>::new());
+    let filtered_traces = create_signal(Vec::<TraceSummary>::new());
+    let _selected_trace = create_signal(Option::<Trace>::None);
 
-    // Filters
-    let service_filter = create_signal(cx, String::new());
-    let type_filter = create_signal(cx, String::new());
-    let min_duration = create_signal(cx, 0u64);
-    let search_query = create_signal(cx, String::new());
+    // Filters (TODO: hook these up to actual UI controls)
+    let _service_filter = create_signal(String::new());
+    let _type_filter = create_signal(String::new());
+    let _min_duration = create_signal(0u64);
+    let _search_query = create_signal(String::new());
 
     // Statistics
-    let total_traces = create_signal(cx, 0usize);
-    let shown_traces = create_signal(cx, 0usize);
+    let total_traces = create_signal(0usize);
+    let shown_traces = create_signal(0usize);
 
     // Initialize Rapace client
     spawn_local(async move {
@@ -61,10 +57,10 @@ fn App<G: Html>(cx: Scope) -> View<G> {
 
                 // Load initial traces
                 if let Ok(trace_list) = client.list_traces(TraceFilter::default()).await {
-                    traces.set(trace_list.clone());
-                    filtered_traces.set(trace_list.clone());
                     total_traces.set(trace_list.len());
                     shown_traces.set(trace_list.len());
+                    traces.set(trace_list.clone());
+                    filtered_traces.set(trace_list);
                 }
 
                 // TODO: Store client for future use
@@ -76,7 +72,7 @@ fn App<G: Html>(cx: Scope) -> View<G> {
         }
     });
 
-    view! { cx,
+    view! {
         div(class="app") {
             // Header
             header(class="header") {
@@ -86,7 +82,7 @@ fn App<G: Html>(cx: Scope) -> View<G> {
                 }
                 div(class="status-badge") {
                     div(class="status-dot") {}
-                    span { (connection_status.get()) }
+                    span { (connection_status.get_clone()) }
                 }
             }
 
@@ -114,8 +110,8 @@ fn App<G: Html>(cx: Scope) -> View<G> {
                     }
 
                     div(class="trace-list") {
-                        (if filtered_traces.get().is_empty() {
-                            view! { cx,
+                        (if filtered_traces.with(|traces| traces.is_empty()) {
+                            view! {
                                 div(class="empty-state") {
                                     div(class="empty-state-icon") { "📭" }
                                     div(class="empty-state-title") { "No traces found" }
@@ -125,10 +121,10 @@ fn App<G: Html>(cx: Scope) -> View<G> {
                                 }
                             }
                         } else {
-                            view! { cx,
+                            view! {
                                 Indexed(
-                                    iterable=filtered_traces,
-                                    view=|cx, trace| view! { cx,
+                                    list=filtered_traces,
+                                    view=|trace| view! {
                                         TraceCard(trace=trace)
                                     }
                                 )
