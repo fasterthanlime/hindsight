@@ -292,28 +292,41 @@
             overflow-y: auto;
             display: flex;
             flex-direction: column;
+            font-family: var(--font-mono);
         }
 
         .trace-item {
             display: grid;
             grid-template-columns: 1fr auto;
             grid-template-rows: auto auto;
-            gap: var(--space-2) var(--space-4);
-            padding: var(--space-3) var(--space-6);
+            gap: 0 var(--space-4);
+            padding: var(--space-2) var(--space-6);
+            padding-left: calc(var(--space-6) - 3px);
             border-bottom: 1px solid var(--border-subtle);
+            border-left: 3px solid transparent;
             cursor: pointer;
-            transition: background 0.1s ease;
+            transition: background 0.05s ease, border-left-color 0.05s ease;
+            position: relative;
         }
 
         .trace-item:hover {
             background: var(--bg-surface);
-            border-bottom-color: var(--border-default);
         }
 
         .trace-item:focus-visible {
             outline: 2px solid var(--accent-focus);
             outline-offset: -2px;
             background: var(--bg-surface);
+        }
+
+        /* Error state affects entire row */
+        .trace-item[data-has-error="true"] {
+            border-left-color: var(--signal-error);
+            background: rgba(248, 81, 73, 0.03);
+        }
+
+        .trace-item[data-has-error="true"]:hover {
+            background: rgba(248, 81, 73, 0.06);
         }
 
         .trace-name {
@@ -325,6 +338,13 @@
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
+            line-height: 1.6;
+        }
+
+        /* Error traces have higher contrast name */
+        .trace-item[data-has-error="true"] .trace-name {
+            color: var(--text-primary);
+            font-weight: var(--weight-semibold);
         }
 
         .trace-duration {
@@ -336,42 +356,48 @@
             text-align: right;
             white-space: nowrap;
             font-variant-numeric: tabular-nums;
+            line-height: 1.6;
+            min-width: 5.5rem;
+        }
+
+        /* Error indicator before duration */
+        .trace-item[data-has-error="true"] .trace-duration::before {
+            content: "✕ ";
+            color: var(--signal-error);
+            margin-right: var(--space-2);
         }
 
         .trace-meta {
             grid-column: 1 / -1;
             grid-row: 2;
             display: flex;
-            gap: var(--space-4);
+            gap: var(--space-3);
             font-size: var(--text-xs);
             color: var(--text-tertiary);
+            line-height: 1.4;
+            margin-top: 1px;
         }
 
         .trace-meta-item {
             display: inline-flex;
             align-items: baseline;
-            gap: var(--space-2);
+            gap: var(--space-1);
         }
 
         .trace-meta-label {
             color: var(--text-muted);
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
+        }
+
+        .trace-meta-value {
+            color: var(--text-tertiary);
         }
 
         .trace-type-badge {
             display: inline-block;
-            padding: 0 var(--space-2);
             font-size: var(--text-xs);
             font-weight: var(--weight-normal);
-            border-left: 2px solid currentColor;
+            color: var(--text-muted);
         }
-
-        .trace-type-badge.type-picante { color: var(--type-picante); }
-        .trace-type-badge.type-rapace { color: var(--type-rapace); }
-        .trace-type-badge.type-dodeca { color: var(--type-dodeca); }
-        .trace-type-badge.type-mixed { color: var(--type-mixed); }
-        .trace-type-badge.type-generic { color: var(--type-generic); }
 
         .trace-error-indicator {
             color: var(--signal-error);
@@ -430,30 +456,26 @@
             margin-bottom: var(--space-1);
         }
 
-        /* Empty state */
+        /* Empty state - minimal and invisible */
         .empty-state {
             flex: 1;
             display: flex;
-            flex-direction: column;
             align-items: center;
             justify-content: center;
-            padding: var(--space-12);
+            padding: var(--space-8);
             font-family: var(--font-mono);
-            color: var(--text-tertiary);
+            color: var(--text-muted);
             text-align: center;
         }
 
         .empty-state-title {
-            font-size: var(--text-md);
-            font-weight: var(--weight-medium);
-            color: var(--text-secondary);
-            margin-bottom: var(--space-2);
+            font-size: var(--text-sm);
+            font-weight: var(--weight-normal);
+            color: var(--text-muted);
         }
 
         .empty-state-text {
-            font-size: var(--text-sm);
-            max-width: 40ch;
-            line-height: var(--leading-normal);
+            display: none;
         }
 
         /* Loading state */
@@ -480,46 +502,78 @@
             to { transform: rotate(360deg); }
         }
 
-        /* Waterfall (for future use) */
+        /* Waterfall - hierarchical trace tree with time alignment */
         .waterfall {
             background: var(--bg-base);
-            padding: var(--space-4);
+            padding: var(--space-4) var(--space-6);
             font-family: var(--font-mono);
         }
 
         .waterfall-header {
-            font-size: var(--text-md);
+            font-size: var(--text-sm);
             font-weight: var(--weight-medium);
-            color: var(--text-primary);
-            margin-bottom: var(--space-4);
-            padding-bottom: var(--space-3);
-            border-bottom: 1px solid var(--border-default);
+            color: var(--text-secondary);
+            margin-bottom: var(--space-3);
+            padding-bottom: var(--space-2);
+            border-bottom: 1px solid var(--border-subtle);
+            display: grid;
+            grid-template-columns: 2fr 1fr 5rem;
+            gap: var(--space-4);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            font-size: var(--text-xs);
         }
 
         .span-row {
-            margin-bottom: var(--space-1);
+            margin-bottom: 0;
             position: relative;
-        }
-
-        .span-bar {
-            background: var(--bg-surface);
-            border-left: 2px solid var(--border-strong);
-            height: 1.5rem;
-            display: flex;
+            display: grid;
+            grid-template-columns: 2fr 1fr 5rem;
+            gap: var(--space-4);
             align-items: center;
-            padding: 0 var(--space-2);
-            font-size: var(--text-xs);
-            margin-left: calc(var(--depth, 0) * var(--space-4));
+            padding: var(--space-1) 0;
+            border-bottom: 1px solid var(--border-subtle);
             transition: background 0.05s;
         }
 
-        .span-bar:hover {
-            background: var(--bg-elevated);
-            border-left-color: var(--accent-focus);
+        .span-row:hover {
+            background: var(--bg-surface);
         }
 
-        .span-bar[data-error="true"] {
-            border-left-color: var(--signal-error);
+        .span-row:focus-visible {
+            outline: 2px solid var(--accent-focus);
+            outline-offset: -2px;
+            background: var(--bg-surface);
+        }
+
+        /* Error spans have subtle background and left border indicator */
+        .span-row[data-error="true"] {
+            background: rgba(248, 81, 73, 0.02);
+        }
+
+        .span-row[data-error="true"]:hover {
+            background: rgba(248, 81, 73, 0.05);
+        }
+
+        /* Span name column - includes hierarchy affordance and indentation */
+        .span-name-container {
+            display: flex;
+            align-items: center;
+            gap: var(--space-2);
+            overflow: hidden;
+            padding-left: calc(var(--depth, 0) * 1.25rem);
+        }
+
+        .span-hierarchy-icon {
+            width: 0.75rem;
+            height: 0.75rem;
+            flex-shrink: 0;
+            color: var(--text-muted);
+            opacity: 0;
+        }
+
+        .span-row[data-has-children="true"] .span-hierarchy-icon {
+            opacity: 1;
         }
 
         .span-name {
@@ -528,12 +582,58 @@
             text-overflow: ellipsis;
             white-space: nowrap;
             color: var(--text-primary);
+            font-size: var(--text-sm);
+            font-weight: var(--weight-normal);
         }
 
+        .span-row[data-error="true"] .span-name {
+            color: var(--text-primary);
+            font-weight: var(--weight-medium);
+        }
+
+        .span-row[data-error="true"] .span-name::before {
+            content: "✕ ";
+            color: var(--signal-error);
+            margin-right: var(--space-1);
+        }
+
+        /* Service/component column */
+        .span-service {
+            color: var(--text-tertiary);
+            font-size: var(--text-xs);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        /* Duration column - right-aligned, tabular nums */
         .span-duration {
-            margin-left: var(--space-2);
             color: var(--text-secondary);
             font-variant-numeric: tabular-nums;
+            text-align: right;
+            font-size: var(--text-sm);
+        }
+
+        /* Critical path hint - subtle underline */
+        .span-row[data-critical-path="true"] .span-name {
+            text-decoration: underline;
+            text-decoration-color: var(--text-muted);
+            text-decoration-thickness: 1px;
+            text-underline-offset: 2px;
+        }
+
+        /* Waterfall bar visualization (optional, for time-aligned view) */
+        .span-waterfall-bar {
+            position: absolute;
+            height: 1px;
+            background: var(--border-strong);
+            top: 50%;
+            left: calc(2fr + 1fr + var(--space-4) * 2);
+        }
+
+        .span-row[data-error="true"] .span-waterfall-bar {
+            background: var(--signal-error);
+            height: 2px;
         }
 
         /* Scrollbar */

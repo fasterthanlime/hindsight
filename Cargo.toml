@@ -6,6 +6,7 @@ members = [
     "crates/hindsight-tui",
     "crates/hindsight-protocol",
     "crates/hindsight-wasm",
+    "xtask",
 ]
 
 [workspace.package]

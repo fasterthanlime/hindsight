@@ -421,5 +421,509 @@ fn generate_seed_traces() -> Vec<Trace> {
         }
     }
 
+    // 9. Deep nesting with error at bottom (8 levels)
+    {
+        let trace_id = TraceId::from_hex("de400000de400000de400000de400000").unwrap();
+        let start = Timestamp(now - 1_200_000_000);
+        let mut spans = vec![];
+
+        // Root: api-gateway
+        spans.push(Span {
+            trace_id,
+            span_id: SpanId::from_hex("d111111111111111").unwrap(),
+            parent_span_id: None,
+            name: "GET /api/report".to_string(),
+            start_time: start,
+            end_time: Some(Timestamp(start.0 + 1_180_000_000)),
+            attributes: BTreeMap::from([attr_str("http.method", "GET")]),
+            events: vec![],
+            status: SpanStatus::Error {
+                message: "Child operation failed".to_string(),
+            },
+            service_name: "api-gateway".to_string(),
+        });
+
+        // Level 1: report-service
+        spans.push(Span {
+            trace_id,
+            span_id: SpanId::from_hex("d222222222222222").unwrap(),
+            parent_span_id: Some(SpanId::from_hex("d111111111111111").unwrap()),
+            name: "generate_report".to_string(),
+            start_time: Timestamp(start.0 + 10_000_000),
+            end_time: Some(Timestamp(start.0 + 1_170_000_000)),
+            attributes: BTreeMap::from([attr_str("report.type", "sales")]),
+            events: vec![],
+            status: SpanStatus::Error {
+                message: "Data fetch failed".to_string(),
+            },
+            service_name: "report-service".to_string(),
+        });
+
+        // Level 2: data-aggregator
+        spans.push(Span {
+            trace_id,
+            span_id: SpanId::from_hex("d333333333333333").unwrap(),
+            parent_span_id: Some(SpanId::from_hex("d222222222222222").unwrap()),
+            name: "aggregate_data".to_string(),
+            start_time: Timestamp(start.0 + 50_000_000),
+            end_time: Some(Timestamp(start.0 + 1_160_000_000)),
+            attributes: BTreeMap::new(),
+            events: vec![],
+            status: SpanStatus::Error {
+                message: "Query failed".to_string(),
+            },
+            service_name: "data-aggregator".to_string(),
+        });
+
+        // Level 3: query-engine
+        spans.push(Span {
+            trace_id,
+            span_id: SpanId::from_hex("d444444444444444").unwrap(),
+            parent_span_id: Some(SpanId::from_hex("d333333333333333").unwrap()),
+            name: "execute_query".to_string(),
+            start_time: Timestamp(start.0 + 100_000_000),
+            end_time: Some(Timestamp(start.0 + 1_150_000_000)),
+            attributes: BTreeMap::new(),
+            events: vec![],
+            status: SpanStatus::Error {
+                message: "Connection failed".to_string(),
+            },
+            service_name: "query-engine".to_string(),
+        });
+
+        // Level 4: connection-pool
+        spans.push(Span {
+            trace_id,
+            span_id: SpanId::from_hex("d555555555555555").unwrap(),
+            parent_span_id: Some(SpanId::from_hex("d444444444444444").unwrap()),
+            name: "get_connection".to_string(),
+            start_time: Timestamp(start.0 + 120_000_000),
+            end_time: Some(Timestamp(start.0 + 1_140_000_000)),
+            attributes: BTreeMap::new(),
+            events: vec![],
+            status: SpanStatus::Error {
+                message: "Pool exhausted".to_string(),
+            },
+            service_name: "query-engine".to_string(),
+        });
+
+        // Level 5: db-driver
+        spans.push(Span {
+            trace_id,
+            span_id: SpanId::from_hex("d666666666666666").unwrap(),
+            parent_span_id: Some(SpanId::from_hex("d555555555555555").unwrap()),
+            name: "db.connect".to_string(),
+            start_time: Timestamp(start.0 + 150_000_000),
+            end_time: Some(Timestamp(start.0 + 1_130_000_000)),
+            attributes: BTreeMap::from([attr_str("db.system", "postgresql")]),
+            events: vec![],
+            status: SpanStatus::Error {
+                message: "Timeout establishing connection".to_string(),
+            },
+            service_name: "query-engine".to_string(),
+        });
+
+        // Level 6: tcp-stack
+        spans.push(Span {
+            trace_id,
+            span_id: SpanId::from_hex("d777777777777777").unwrap(),
+            parent_span_id: Some(SpanId::from_hex("d666666666666666").unwrap()),
+            name: "tcp.connect".to_string(),
+            start_time: Timestamp(start.0 + 180_000_000),
+            end_time: Some(Timestamp(start.0 + 1_120_000_000)),
+            attributes: BTreeMap::from([attr_str("peer.address", "10.0.1.5:5432")]),
+            events: vec![],
+            status: SpanStatus::Error {
+                message: "Connection refused".to_string(),
+            },
+            service_name: "query-engine".to_string(),
+        });
+
+        // Level 7: network-layer (deepest)
+        spans.push(Span {
+            trace_id,
+            span_id: SpanId::from_hex("d888888888888888").unwrap(),
+            parent_span_id: Some(SpanId::from_hex("d777777777777777").unwrap()),
+            name: "socket.connect".to_string(),
+            start_time: Timestamp(start.0 + 200_000_000),
+            end_time: Some(Timestamp(start.0 + 1_100_000_000)),
+            attributes: BTreeMap::new(),
+            events: vec![
+                SpanEvent {
+                    name: "connection_refused".to_string(),
+                    timestamp: Timestamp(start.0 + 1_000_000_000),
+                    attributes: BTreeMap::from([attr_str("errno", "ECONNREFUSED")]),
+                },
+            ],
+            status: SpanStatus::Error {
+                message: "ECONNREFUSED".to_string(),
+            },
+            service_name: "query-engine".to_string(),
+        });
+
+        if let Some(trace) = Trace::from_spans(spans) {
+            traces.push(trace);
+        }
+    }
+
+    // 10. Parallel operations (fan-out pattern)
+    {
+        let trace_id = TraceId::from_hex("fa00fa00fa00fa00fa00fa00fa00fa00").unwrap();
+        let start = Timestamp(now - 650_000_000);
+        let mut spans = vec![];
+
+        // Root span
+        spans.push(Span {
+            trace_id,
+            span_id: SpanId::from_hex("f000000000000001").unwrap(),
+            parent_span_id: None,
+            name: "GET /api/dashboard".to_string(),
+            start_time: start,
+            end_time: Some(Timestamp(start.0 + 645_000_000)),
+            attributes: BTreeMap::from([attr_str("http.method", "GET")]),
+            events: vec![],
+            status: SpanStatus::Ok,
+            service_name: "api-gateway".to_string(),
+        });
+
+        // Parallel fetches - all start around the same time
+        let parallel_start = start.0 + 5_000_000;
+
+        // Fetch 1: user info (fast)
+        spans.push(Span {
+            trace_id,
+            span_id: SpanId::from_hex("f100000000000001").unwrap(),
+            parent_span_id: Some(SpanId::from_hex("f000000000000001").unwrap()),
+            name: "fetch_user_info".to_string(),
+            start_time: Timestamp(parallel_start),
+            end_time: Some(Timestamp(parallel_start + 45_000_000)),
+            attributes: BTreeMap::new(),
+            events: vec![],
+            status: SpanStatus::Ok,
+            service_name: "user-service".to_string(),
+        });
+
+        // Fetch 2: recent orders (medium)
+        spans.push(Span {
+            trace_id,
+            span_id: SpanId::from_hex("f200000000000002").unwrap(),
+            parent_span_id: Some(SpanId::from_hex("f000000000000001").unwrap()),
+            name: "fetch_recent_orders".to_string(),
+            start_time: Timestamp(parallel_start + 2_000_000),
+            end_time: Some(Timestamp(parallel_start + 320_000_000)),
+            attributes: BTreeMap::from([attr_int("limit", 20)]),
+            events: vec![],
+            status: SpanStatus::Ok,
+            service_name: "order-service".to_string(),
+        });
+
+        // Fetch 3: recommendations (slow - this is the critical path)
+        spans.push(Span {
+            trace_id,
+            span_id: SpanId::from_hex("f300000000000003").unwrap(),
+            parent_span_id: Some(SpanId::from_hex("f000000000000001").unwrap()),
+            name: "fetch_recommendations".to_string(),
+            start_time: Timestamp(parallel_start + 1_000_000),
+            end_time: Some(Timestamp(parallel_start + 635_000_000)),
+            attributes: BTreeMap::from([
+                attr_str("algo", "collaborative_filtering"),
+                attr_int("candidates", 1000),
+            ]),
+            events: vec![],
+            status: SpanStatus::Ok,
+            service_name: "recommendation-service".to_string(),
+        });
+
+        // Fetch 4: notifications (fast)
+        spans.push(Span {
+            trace_id,
+            span_id: SpanId::from_hex("f400000000000004").unwrap(),
+            parent_span_id: Some(SpanId::from_hex("f000000000000001").unwrap()),
+            name: "fetch_notifications".to_string(),
+            start_time: Timestamp(parallel_start + 3_000_000),
+            end_time: Some(Timestamp(parallel_start + 28_000_000)),
+            attributes: BTreeMap::from([attr_bool("unread_only", true)]),
+            events: vec![],
+            status: SpanStatus::Ok,
+            service_name: "notification-service".to_string(),
+        });
+
+        if let Some(trace) = Trace::from_spans(spans) {
+            traces.push(trace);
+        }
+    }
+
+    // 11. Authentication failure
+    {
+        let trace_id = TraceId::from_hex("a00000000000000000000000000000a0").unwrap();
+        let start = Timestamp(now - 8_000_000);
+
+        let span = Span {
+            trace_id,
+            span_id: SpanId::from_hex("a111111111111111").unwrap(),
+            parent_span_id: None,
+            name: "POST /api/admin".to_string(),
+            start_time: start,
+            end_time: Some(Timestamp(start.0 + 3_500_000)),
+            attributes: BTreeMap::from([
+                attr_str("http.method", "POST"),
+                attr_int("http.status_code", 403),
+                attr_bool("error", true),
+            ]),
+            events: vec![SpanEvent {
+                name: "auth_failed".to_string(),
+                timestamp: Timestamp(start.0 + 2_000_000),
+                attributes: BTreeMap::from([
+                    attr_str("reason", "insufficient_permissions"),
+                    attr_str("required_role", "admin"),
+                ]),
+            }],
+            status: SpanStatus::Error {
+                message: "Forbidden: insufficient permissions".to_string(),
+            },
+            service_name: "api-gateway".to_string(),
+        };
+
+        if let Some(trace) = Trace::from_spans(vec![span]) {
+            traces.push(trace);
+        }
+    }
+
+    // 12. Very fast cache hit (sub-millisecond)
+    {
+        let trace_id = TraceId::from_hex("ffffff00ffffff00ffffff00ffffff00").unwrap();
+        let start = Timestamp(now - 500_000);
+
+        let span = Span {
+            trace_id,
+            span_id: SpanId::from_hex("fff0000000000fff").unwrap(),
+            parent_span_id: None,
+            name: "GET /api/health".to_string(),
+            start_time: start,
+            end_time: Some(Timestamp(start.0 + 250_000)),
+            attributes: BTreeMap::from([
+                attr_str("http.method", "GET"),
+                attr_int("http.status_code", 200),
+            ]),
+            events: vec![],
+            status: SpanStatus::Ok,
+            service_name: "api-gateway".to_string(),
+        };
+
+        if let Some(trace) = Trace::from_spans(vec![span]) {
+            traces.push(trace);
+        }
+    }
+
+    // 13. Validation error (fast failure)
+    {
+        let trace_id = TraceId::from_hex("ba0ba0ba0ba0ba0ba0ba0ba0ba0ba0ba").unwrap();
+        let start = Timestamp(now - 12_000_000);
+
+        let span = Span {
+            trace_id,
+            span_id: SpanId::from_hex("b000000000000bad").unwrap(),
+            parent_span_id: None,
+            name: "POST /api/user".to_string(),
+            start_time: start,
+            end_time: Some(Timestamp(start.0 + 5_500_000)),
+            attributes: BTreeMap::from([
+                attr_str("http.method", "POST"),
+                attr_int("http.status_code", 400),
+                attr_bool("error", true),
+                attr_str("error.type", "ValidationError"),
+            ]),
+            events: vec![SpanEvent {
+                name: "validation_failed".to_string(),
+                timestamp: Timestamp(start.0 + 2_000_000),
+                attributes: BTreeMap::from([
+                    attr_str("field", "email"),
+                    attr_str("message", "invalid email format"),
+                ]),
+            }],
+            status: SpanStatus::Error {
+                message: "Invalid request: email format invalid".to_string(),
+            },
+            service_name: "user-service".to_string(),
+        };
+
+        if let Some(trace) = Trace::from_spans(vec![span]) {
+            traces.push(trace);
+        }
+    }
+
+    // 14. Database query with retries
+    {
+        let trace_id = TraceId::from_hex("4e44e444e444e444e444e444e444e444").unwrap();
+        let start = Timestamp(now - 3_800_000_000);
+        let mut spans = vec![];
+
+        // Root
+        spans.push(Span {
+            trace_id,
+            span_id: SpanId::from_hex("4000000000000001").unwrap(),
+            parent_span_id: None,
+            name: "GET /api/analytics".to_string(),
+            start_time: start,
+            end_time: Some(Timestamp(start.0 + 3_750_000_000)),
+            attributes: BTreeMap::from([attr_str("http.method", "GET")]),
+            events: vec![],
+            status: SpanStatus::Ok,
+            service_name: "analytics-service".to_string(),
+        });
+
+        // Retry 1 - fast fail
+        spans.push(Span {
+            trace_id,
+            span_id: SpanId::from_hex("4111111111111111").unwrap(),
+            parent_span_id: Some(SpanId::from_hex("4000000000000001").unwrap()),
+            name: "db.query".to_string(),
+            start_time: Timestamp(start.0 + 10_000_000),
+            end_time: Some(Timestamp(start.0 + 1_200_000_000)),
+            attributes: BTreeMap::from([
+                attr_str("db.system", "postgresql"),
+                attr_int("retry.attempt", 1),
+            ]),
+            events: vec![SpanEvent {
+                name: "deadlock_detected".to_string(),
+                timestamp: Timestamp(start.0 + 1_100_000_000),
+                attributes: BTreeMap::new(),
+            }],
+            status: SpanStatus::Error {
+                message: "Deadlock detected".to_string(),
+            },
+            service_name: "analytics-service".to_string(),
+        });
+
+        // Retry 2 - slow fail
+        spans.push(Span {
+            trace_id,
+            span_id: SpanId::from_hex("4222222222222222").unwrap(),
+            parent_span_id: Some(SpanId::from_hex("4000000000000001").unwrap()),
+            name: "db.query".to_string(),
+            start_time: Timestamp(start.0 + 1_250_000_000),
+            end_time: Some(Timestamp(start.0 + 2_450_000_000)),
+            attributes: BTreeMap::from([
+                attr_str("db.system", "postgresql"),
+                attr_int("retry.attempt", 2),
+            ]),
+            events: vec![SpanEvent {
+                name: "timeout".to_string(),
+                timestamp: Timestamp(start.0 + 2_400_000_000),
+                attributes: BTreeMap::new(),
+            }],
+            status: SpanStatus::Error {
+                message: "Query timeout".to_string(),
+            },
+            service_name: "analytics-service".to_string(),
+        });
+
+        // Retry 3 - success
+        spans.push(Span {
+            trace_id,
+            span_id: SpanId::from_hex("4333333333333333").unwrap(),
+            parent_span_id: Some(SpanId::from_hex("4000000000000001").unwrap()),
+            name: "db.query".to_string(),
+            start_time: Timestamp(start.0 + 2_500_000_000),
+            end_time: Some(Timestamp(start.0 + 3_740_000_000)),
+            attributes: BTreeMap::from([
+                attr_str("db.system", "postgresql"),
+                attr_int("retry.attempt", 3),
+                attr_int("rows.returned", 15420),
+            ]),
+            events: vec![],
+            status: SpanStatus::Ok,
+            service_name: "analytics-service".to_string(),
+        });
+
+        if let Some(trace) = Trace::from_spans(spans) {
+            traces.push(trace);
+        }
+    }
+
+    // 15. Mixed services with moderate complexity
+    {
+        let trace_id = TraceId::from_hex("111a111a111a111a111a111a111a111a").unwrap();
+        let start = Timestamp(now - 420_000_000);
+        let mut spans = vec![];
+
+        // Root
+        spans.push(Span {
+            trace_id,
+            span_id: SpanId::from_hex("1a00000000000001").unwrap(),
+            parent_span_id: None,
+            name: "POST /api/cart/add".to_string(),
+            start_time: start,
+            end_time: Some(Timestamp(start.0 + 415_000_000)),
+            attributes: BTreeMap::from([attr_str("http.method", "POST")]),
+            events: vec![],
+            status: SpanStatus::Ok,
+            service_name: "api-gateway".to_string(),
+        });
+
+        // Validate user
+        spans.push(Span {
+            trace_id,
+            span_id: SpanId::from_hex("1a11111111111111").unwrap(),
+            parent_span_id: Some(SpanId::from_hex("1a00000000000001").unwrap()),
+            name: "validate_session".to_string(),
+            start_time: Timestamp(start.0 + 5_000_000),
+            end_time: Some(Timestamp(start.0 + 35_000_000)),
+            attributes: BTreeMap::new(),
+            events: vec![],
+            status: SpanStatus::Ok,
+            service_name: "auth-service".to_string(),
+        });
+
+        // Check product availability
+        spans.push(Span {
+            trace_id,
+            span_id: SpanId::from_hex("1a22222222222222").unwrap(),
+            parent_span_id: Some(SpanId::from_hex("1a00000000000001").unwrap()),
+            name: "check_stock".to_string(),
+            start_time: Timestamp(start.0 + 40_000_000),
+            end_time: Some(Timestamp(start.0 + 220_000_000)),
+            attributes: BTreeMap::from([
+                attr_str("product_id", "SKU-12345"),
+                attr_int("quantity", 2),
+            ]),
+            events: vec![],
+            status: SpanStatus::Ok,
+            service_name: "inventory-service".to_string(),
+        });
+
+        // Update cart
+        spans.push(Span {
+            trace_id,
+            span_id: SpanId::from_hex("1a33333333333333").unwrap(),
+            parent_span_id: Some(SpanId::from_hex("1a00000000000001").unwrap()),
+            name: "cart.add_item".to_string(),
+            start_time: Timestamp(start.0 + 225_000_000),
+            end_time: Some(Timestamp(start.0 + 410_000_000)),
+            attributes: BTreeMap::new(),
+            events: vec![],
+            status: SpanStatus::Ok,
+            service_name: "cart-service".to_string(),
+        });
+
+        // Nested: save to database
+        spans.push(Span {
+            trace_id,
+            span_id: SpanId::from_hex("1a44444444444444").unwrap(),
+            parent_span_id: Some(SpanId::from_hex("1a33333333333333").unwrap()),
+            name: "db.update cart_items".to_string(),
+            start_time: Timestamp(start.0 + 230_000_000),
+            end_time: Some(Timestamp(start.0 + 405_000_000)),
+            attributes: BTreeMap::from([attr_str("db.system", "redis")]),
+            events: vec![],
+            status: SpanStatus::Ok,
+            service_name: "cart-service".to_string(),
+        });
+
+        if let Some(trace) = Trace::from_spans(spans) {
+            traces.push(trace);
+        }
+    }
+
     traces
 }

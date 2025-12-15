@@ -55,7 +55,7 @@ impl TabId {
 ///
 /// This struct holds all navigation-related signals and is passed down
 /// through the component tree.
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct NavigationState {
     /// Currently active tab
     pub active_tab: Signal<TabId>,

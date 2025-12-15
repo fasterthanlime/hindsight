@@ -127,10 +127,9 @@ fn App() -> View {
     });
 
     let nav_state_for_tab_bar = nav_state.clone();
-    let nav_state_for_list = nav_state.clone();
-    let nav_state_for_detail = nav_state.clone();
+    let nav_state_for_detail_check = nav_state.clone();
     let is_detail_view = create_memo(move || {
-        nav_state.current_route.with(|route| matches!(route, routing::Route::TraceDetail { .. }))
+        nav_state_for_detail_check.current_route.with(|route| matches!(route, routing::Route::TraceDetail { .. }))
     });
 
     view! {
@@ -145,10 +144,11 @@ fn App() -> View {
             div(class="content") {
                 (if is_detail_view.with(|is_detail| *is_detail) {
                     // Detail view
-                    let trace_id = nav_state_for_detail.selected_trace_id.with(|id| id.clone());
+                    let nav_detail = nav_state.clone();
+                    let trace_id = nav_detail.selected_trace_id.with(|id| id.clone());
                     if let Some(trace_id) = trace_id {
                         view! {
-                            TraceDetail(trace_id=trace_id, nav_state=nav_state_for_detail.clone())
+                            TraceDetail(trace_id=trace_id, nav_state=nav_detail)
                         }
                     } else {
                         view! {
@@ -159,6 +159,7 @@ fn App() -> View {
                     }
                 } else {
                     // List view
+                    let nav_list = nav_state.clone();
                     view! {
                         // Sidebar with filters
                         aside(class="sidebar") {
@@ -195,8 +196,8 @@ fn App() -> View {
                                     view! {
                                         Indexed(
                                             list=filtered_traces,
-                                            view=|trace| {
-                                                let nav = nav_state_for_list.clone();
+                                            view=move |trace| {
+                                                let nav = nav_list.clone();
                                                 view! {
                                                     TraceCard(trace=trace, nav_state=nav)
                                                 }
@@ -205,6 +206,7 @@ fn App() -> View {
                                     }
                                 })
                             }
+                        }
                     }
                 })
             }
