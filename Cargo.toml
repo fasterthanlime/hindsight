@@ -18,8 +18,9 @@ authors = ["Amos Wenger <amos@bearcove.net>"]
 
 [workspace.dependencies]
 # Bearcove ecosystem
-facet = "0.32"
-rapace = { version = "0.5", features = ["stream", "websocket"] }
+facet = { git = "https://github.com/facet-rs/facet", branch = "main" }
+picante = { git = "https://github.com/bearcove/picante", branch = "main" }
+rapace = { git = "https://github.com/bearcove/rapace", branch = "main", features = ["stream", "websocket"] }
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
