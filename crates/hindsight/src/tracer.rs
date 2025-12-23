@@ -35,8 +35,9 @@ impl Tracer {
         let addr = addr.as_ref();
 
         // Connect to server
-        let mut stream = TcpStream::connect(addr).await
-            .map_err(|e| TracerError::ConnectionFailed(format!("Failed to connect to {}: {}", addr, e)))?;
+        let mut stream = TcpStream::connect(addr).await.map_err(|e| {
+            TracerError::ConnectionFailed(format!("Failed to connect to {}: {}", addr, e))
+        })?;
 
         // Send HTTP upgrade request
         let host = addr.split(':').next().unwrap_or("localhost");
@@ -49,43 +50,47 @@ impl Tracer {
             host
         );
 
-        stream.write_all(request.as_bytes()).await
-            .map_err(|e| TracerError::ConnectionFailed(format!("Failed to send upgrade request: {}", e)))?;
+        stream.write_all(request.as_bytes()).await.map_err(|e| {
+            TracerError::ConnectionFailed(format!("Failed to send upgrade request: {}", e))
+        })?;
 
         // Read response until we get \r\n\r\n
         let mut response = Vec::new();
         let mut buf = [0u8; 1];
 
         loop {
-            stream.read_exact(&mut buf).await
-                .map_err(|e| TracerError::ConnectionFailed(format!("Failed to read upgrade response: {}", e)))?;
+            stream.read_exact(&mut buf).await.map_err(|e| {
+                TracerError::ConnectionFailed(format!("Failed to read upgrade response: {}", e))
+            })?;
             response.push(buf[0]);
 
             // Check for \r\n\r\n
-            if response.len() >= 4
-                && response[response.len() - 4..] == [b'\r', b'\n', b'\r', b'\n']
+            if response.len() >= 4 && response[response.len() - 4..] == [b'\r', b'\n', b'\r', b'\n']
             {
                 break;
             }
 
             // Prevent infinite loop on malformed response
             if response.len() > 8192 {
-                return Err(TracerError::ConnectionFailed("HTTP upgrade response too large".to_string()));
+                return Err(TracerError::ConnectionFailed(
+                    "HTTP upgrade response too large".to_string(),
+                ));
             }
         }
 
         // Parse response - look for "HTTP/1.1 101"
         let response_str = String::from_utf8_lossy(&response);
         if !response_str.contains("101") && !response_str.contains("Switching Protocols") {
-            return Err(TracerError::ConnectionFailed(
-                format!("HTTP upgrade failed: {}", response_str.lines().next().unwrap_or("unknown error"))
-            ));
+            return Err(TracerError::ConnectionFailed(format!(
+                "HTTP upgrade failed: {}",
+                response_str.lines().next().unwrap_or("unknown error")
+            )));
         }
 
         // HTTP upgrade successful, switching to Rapace protocol
 
         // Create transport from the upgraded stream
-        let transport = rapace::transport::StreamTransport::new(stream);
+        let transport = Transport::stream(stream);
         Self::new(transport).await
     }
 
@@ -94,26 +99,27 @@ impl Tracer {
     /// # Example
     /// ```no_run
     /// # use hindsight::Tracer;
-    /// # async fn example() -> Result<(), TracerError> {
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// // TCP transport
-    /// let transport = rapace::transport::StreamTransport::connect("localhost:9090").await?;
+    /// let stream = tokio::net::TcpStream::connect("localhost:9090").await?;
+    /// let transport = rapace::Transport::stream(stream);
     /// let tracer = Tracer::new(transport).await?;
     ///
     /// // SHM transport (for same-machine communication)
-    /// // let transport = rapace::transport::shm::ShmTransport::open("/tmp/hindsight.shm").await?;
-    /// // let tracer = Tracer::new(transport).await?;
+    /// // let (client, server) = rapace::Transport::shm_pair();
+    /// // let tracer = Tracer::new(client).await?;
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn new<T: Transport + 'static>(transport: T) -> Result<Self, TracerError> {
+    pub async fn new(transport: Transport) -> Result<Self, TracerError> {
         // Detect service name (from env, or default)
-        let service_name = std::env::var("HINDSIGHT_SERVICE_NAME")
-            .unwrap_or_else(|_| "unknown".to_string());
+        let service_name =
+            std::env::var("HINDSIGHT_SERVICE_NAME").unwrap_or_else(|_| "unknown".to_string());
 
         // Create Rapace session
         // IMPORTANT: Do NOT attach a tracer to this session!
         // (Prevents infinite loop)
-        let session = Arc::new(RpcSession::new(Arc::new(transport)));
+        let session = Arc::new(RpcSession::new(transport));
 
         // Spawn session runner
         let session_clone = session.clone();

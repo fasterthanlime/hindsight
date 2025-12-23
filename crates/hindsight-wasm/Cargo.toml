@@ -15,7 +15,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 hindsight-protocol = { path = "../hindsight-protocol", features = ["js"] }
-rapace = { path = "../../../rapace/crates/rapace", default-features = false, features = ["websocket"] }
+rapace = { git = "https://github.com/bearcove/rapace", branch = "main", default-features = false, features = ["websocket"] }
 facet.workspace = true
 
 # Sycamore for reactive UI
