@@ -4,13 +4,11 @@
 //!
 //! ```no_run
 //! use hindsight::Tracer;
-//! use rapace::transport::StreamTransport;
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
-//!     // Connect via TCP
-//!     let transport = StreamTransport::connect("localhost:9090").await?;
-//!     let tracer = Tracer::new(transport).await?;
+//!     // Connect via HTTP upgrade
+//!     let tracer = Tracer::connect_http("localhost:9090").await?;
 //!
 //!     let span = tracer.span("my_operation")
 //!         .with_attribute("user_id", 123)

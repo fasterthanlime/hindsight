@@ -99,8 +99,7 @@ impl Tracer {
     /// # Example
     /// ```no_run
     /// # use hindsight::Tracer;
-    /// # use hindsight::TracerError;
-    /// # async fn example() -> Result<(), TracerError> {
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// // TCP transport
     /// let stream = tokio::net::TcpStream::connect("localhost:9090").await?;
     /// let transport = rapace::Transport::stream(stream);
