@@ -8,6 +8,7 @@ use hindsight_protocol::*;
 use rapace::{RpcSession, WebSocketTransport};
 use std::sync::Arc;
 use sycamore::prelude::*;
+use sycamore::web::Suspense;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::spawn_local;
@@ -42,6 +43,9 @@ fn App() -> View {
     // Navigation state
     let nav_state = NavigationState::new();
 
+    // Shared session for the entire app (wrapped in Arc, so it's cloneable)
+    let session = create_signal(Option::<Arc<RpcSession>>::None);
+
     // Trace data
     let traces = create_signal(Vec::<TraceSummary>::new());
     let filtered_traces = create_signal(Vec::<TraceSummary>::new());
@@ -63,22 +67,27 @@ fn App() -> View {
         let window = web_sys::window().expect("no global window");
 
         let closure = Closure::wrap(Box::new(move |_: web_sys::Event| {
-            let route = routing::get_current_route();
-            nav_state.current_route.set(route.clone());
+            let nav_state = nav_state.clone();
 
-            // Update active tab based on route
-            let tab = TabId::from_route(&route);
-            nav_state.active_tab.set(tab);
+            // Queue microtask to defer signal updates
+            wasm_bindgen_futures::spawn_local(async move {
+                let route = routing::get_current_route();
+                nav_state.current_route.set(route.clone());
 
-            // Update selected items based on route
-            match &route {
-                routing::Route::TraceDetail { trace_id } => {
-                    nav_state.selected_trace_id.set(Some(trace_id.clone()));
+                // Update active tab based on route
+                let tab = TabId::from_route(&route);
+                nav_state.active_tab.set(tab);
+
+                // Update selected items based on route
+                match &route {
+                    routing::Route::TraceDetail { trace_id } => {
+                        nav_state.selected_trace_id.set(Some(trace_id.clone()));
+                    }
+                    _ => {
+                        nav_state.selected_trace_id.set(None);
+                    }
                 }
-                _ => {
-                    nav_state.selected_trace_id.set(None);
-                }
-            }
+            });
         }) as Box<dyn FnMut(_)>);
 
         window
@@ -91,9 +100,10 @@ fn App() -> View {
 
     // Initialize Rapace client
     let available_tabs = nav_state.available_tabs;
+    let session_for_init = session.clone();
     spawn_local(async move {
-        match init_client().await {
-            Ok(client) => {
+        match init_session().await {
+            Ok(s) => {
                 tracing::info!("Connected to Hindsight via Rapace");
                 connected.set(true);
                 connection_status.set("Connected".to_string());
@@ -104,6 +114,7 @@ fn App() -> View {
 
                 // Load initial traces
                 tracing::info!("Requesting trace list with default filter...");
+                let client = HindsightServiceClient::new(s.clone());
                 match client.list_traces(TraceFilter::default()).await {
                     Ok(trace_list) => {
                         tracing::info!("Received {} traces", trace_list.len());
@@ -117,7 +128,8 @@ fn App() -> View {
                     }
                 }
 
-                // TODO: Store client for future use
+                // Store session for use by components
+                session_for_init.set(Some(s));
             }
             Err(e) => {
                 tracing::error!("Failed to connect: {:?}", e);
@@ -144,80 +156,104 @@ fn App() -> View {
 
             // Main content - switches based on route
             div(class="content") {
-                (if is_detail_view.with(|is_detail| *is_detail) {
-                    // Detail view
-                    let nav_detail = nav_state.clone();
-                    let trace_id = nav_detail.selected_trace_id.with(|id| id.clone());
-                    if let Some(trace_id) = trace_id {
-                        view! {
-                            TraceDetail(trace_id=trace_id, nav_state=nav_detail)
+                (View::from_dynamic(move || {
+                    if is_detail_view.with(|is_detail| *is_detail) {
+                        // Detail view
+                        let nav_detail = nav_state.clone();
+                        let session_detail = session.with(|s| s.clone());
+                        let trace_id = nav_detail.selected_trace_id.with(|id| id.clone());
+                        match (trace_id, session_detail) {
+                            (Some(trace_id), Some(sess)) => {
+                                // Create a wrapper component for Suspense
+                                #[component(inline_props)]
+                                async fn TraceDetailWrapper(trace_id: TraceId, nav_state: NavigationState, session: Arc<RpcSession>) -> View {
+                                    view! {
+                                        TraceDetail(trace_id=trace_id, nav_state=nav_state, session=session)
+                                    }
+                                }
+
+                                view! {
+                                    Suspense(fallback=move || view! {
+                                        div(class="loading") {
+                                            div(class="spinner") {}
+                                            "Loading trace..."
+                                        }
+                                    }) {
+                                        TraceDetailWrapper(trace_id=trace_id, nav_state=nav_detail, session=sess)
+                                    }
+                                }
+                            },
+                            (Some(_), None) => view! {
+                                div(class="placeholder", style="padding: var(--space-6);") {
+                                    p { "Connecting..." }
+                                }
+                            },
+                            (None, _) => view! {
+                                div(class="placeholder", style="padding: var(--space-6);") {
+                                    p { "No trace selected" }
+                                }
+                            }
                         }
                     } else {
+                        // List view
+                        let nav_list = nav_state.clone();
                         view! {
-                            div(class="placeholder", style="padding: var(--space-6);") {
-                                p { "No trace selected" }
-                            }
-                        }
-                    }
-                } else {
-                    // List view
-                    let nav_list = nav_state.clone();
-                    view! {
-                        // Sidebar with filters
-                        aside(class="sidebar") {
-                            div(class="sidebar-section") {
-                                h2 { "Filters" }
-                                // TODO: Filter components
+                            // Sidebar with filters
+                            aside(class="sidebar") {
+                                div(class="sidebar-section") {
+                                    h2 { "Filters" }
+                                    // TODO: Filter components
+                                }
+
+                                div(class="sidebar-section") {
+                                    h2 { "Statistics" }
+                                    p { "Total Traces: " strong { (total_traces.get()) } }
+                                    p { "Shown: " strong { (shown_traces.get()) } }
+                                }
                             }
 
-                            div(class="sidebar-section") {
-                                h2 { "Statistics" }
-                                p { "Total Traces: " strong { (total_traces.get()) } }
-                                p { "Shown: " strong { (shown_traces.get()) } }
-                            }
-                        }
+                            // Main panel with trace list
+                            main(class="main-panel") {
+                                div(class="panel-header") {
+                                    h2 { "Traces" }
+                                    button(class="btn") { "Refresh" }
+                                }
 
-                        // Main panel with trace list
-                        main(class="main-panel") {
-                            div(class="panel-header") {
-                                h2 { "Traces" }
-                                button(class="btn") { "Refresh" }
-                            }
-
-                            div(class="trace-list") {
-                                (if filtered_traces.with(|traces| traces.is_empty()) {
-                                    view! {
-                                        div(class="empty-state") {
-                                            div(class="empty-state-title") { "No traces found" }
-                                            div(class="empty-state-text") {
-                                                "Send some traces from your application to see them here."
-                                            }
-                                        }
-                                    }
-                                } else {
-                                    view! {
-                                        Indexed(
-                                            list=filtered_traces,
-                                            view=move |trace| {
-                                                let nav = nav_list.clone();
-                                                view! {
-                                                    TraceCard(trace=trace, nav_state=nav)
+                                div(class="trace-list") {
+                                    (if filtered_traces.with(|traces| traces.is_empty()) {
+                                        view! {
+                                            div(class="empty-state") {
+                                                div(class="empty-state-title") { "No traces found" }
+                                                div(class="empty-state-text") {
+                                                    "Send some traces from your application to see them here."
                                                 }
                                             }
-                                        )
-                                    }
-                                })
+                                        }
+                                    } else {
+                                        view! {
+                                            Indexed(
+                                                list=filtered_traces,
+                                                view=move |trace| {
+                                                    let nav = nav_list.clone();
+                                                    view! {
+                                                        TraceCard(trace=trace, nav_state=nav)
+                                                    }
+                                                }
+                                            )
+                                        }
+                                    })
+                                }
                             }
                         }
                     }
-                })
+                }))
             }
         }
     }
 }
 
-/// Initialize the Rapace client connection
-async fn init_client() -> Result<HindsightServiceClient, String> {
+/// Initialize the Rapace session
+async fn init_session() -> Result<Arc<RpcSession>, String> {
     let protocol = if web_sys::window()
         .and_then(|w| w.location().protocol().ok())
         .map(|p| p == "https:")
@@ -256,8 +292,7 @@ async fn init_client() -> Result<HindsightServiceClient, String> {
         }
     });
 
-    let client = HindsightServiceClient::new(session);
-    tracing::debug!("HindsightServiceClient created");
+    tracing::debug!("RPC session ready");
 
-    Ok(client)
+    Ok(session)
 }

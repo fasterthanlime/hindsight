@@ -23,7 +23,7 @@ use crate::storage::TraceStore;
 pub async fn run_server(
     host: impl Into<String>,
     http_port: u16,
-    tcp_port: u16,
+    _tcp_port: u16, // Unused - unified server handles all protocols
     ttl_secs: u64,
     seed: bool,
 ) -> anyhow::Result<()> {
@@ -41,64 +41,18 @@ pub async fn run_server(
 
     let service = Arc::new(HindsightServiceImpl::new(store));
 
-    // Spawn raw TCP server on port 1991 (for clients that want to skip HTTP handshake)
-    let service_tcp = service.clone();
-    let host_tcp = host.clone();
-    tokio::spawn(async move {
-        if let Err(e) = serve_tcp(&host_tcp, tcp_port, service_tcp).await {
-            tracing::error!("TCP server error: {}", e);
-        }
-    });
-
-    // Serve unified HTTP server on port 1990
-    // Handles: HTTP GET, WebSocket upgrade, Rapace upgrade
+    // Serve unified server - handles ALL protocols on single port:
+    // - HTTP GET → Web UI
+    // - WebSocket upgrade → WASM clients
+    // - HTTP Upgrade: rapace → Native clients
+    // - Raw binary → Direct Rapace TCP
     serve_http_unified(&host, http_port, service).await?;
 
     Ok(())
 }
 
-/// Serve Rapace RPC over TCP (for native clients)
-async fn serve_tcp(
-    host: &str,
-    port: u16,
-    service: Arc<HindsightServiceImpl>,
-) -> anyhow::Result<()> {
-    let addr = format!("{}:{}", host, port);
-    let listener = tokio::net::TcpListener::bind(&addr).await?;
-
-    tracing::info!("📡 Rapace TCP server listening on {}", addr);
-
-    loop {
-        let (stream, peer_addr) = listener.accept().await?;
-        tracing::info!("New TCP connection from {}", peer_addr);
-
-        let service = service.clone();
-        tokio::spawn(async move {
-            let transport = rapace::Transport::stream(stream);
-
-            // IMPORTANT: No tracer attached! (Prevents infinite loop)
-            let session = Arc::new(RpcSession::new(transport));
-
-            // Create dispatcher function
-            session.set_dispatcher(move |frame| {
-                let service_impl = service.as_ref().clone();
-                Box::pin(async move {
-                    let server = HindsightServiceServer::new(service_impl);
-                    server
-                        .dispatch(frame.desc.method_id, &frame)
-                        .await
-                })
-            });
-
-            if let Err(e) = session.run().await {
-                tracing::error!("TCP session error: {}", e);
-            }
-        });
-    }
-}
-
-/// Unified HTTP server on port 1990
-/// Handles: HTTP GET /, WebSocket upgrade, Rapace upgrade
+/// Unified HTTP server - handles ALL protocols on a single port
+/// Handles: HTTP GET /, WebSocket upgrade, Rapace upgrade, raw TCP
 async fn serve_http_unified(
     host: &str,
     port: u16,
@@ -220,14 +174,18 @@ async fn handle_rapace_tcp(tcp_stream: tokio::net::TcpStream, service: Arc<Hinds
     let transport = rapace::Transport::stream(tcp_stream);
     let session = Arc::new(RpcSession::new(transport));
 
-    session.set_dispatcher(move |frame| {
-        let service_impl = service.as_ref().clone();
-        Box::pin(async move {
-            let server = HindsightServiceServer::new(service_impl);
-            server
-                .dispatch(frame.desc.method_id, &frame)
-                .await
-        })
+    session.set_dispatcher({
+        let session = session.clone();
+        move |frame| {
+            let service_impl = service.as_ref().clone();
+            let session = session.clone();
+            Box::pin(async move {
+                let server = HindsightServiceServer::new(service_impl);
+                server
+                    .dispatch(frame.desc.method_id, &frame, session.buffer_pool())
+                    .await
+            })
+        }
     });
 
     if let Err(e) = session.run().await {
@@ -316,14 +274,18 @@ async fn handle_rapace_connection(upgraded: Upgraded, service: Arc<HindsightServ
     let session = Arc::new(RpcSession::new(transport));
 
     // Create dispatcher function
-    session.set_dispatcher(move |frame| {
-        let service_impl = service.as_ref().clone();
-        Box::pin(async move {
-            let server = HindsightServiceServer::new(service_impl);
-            server
-                .dispatch(frame.desc.method_id, &frame)
-                .await
-        })
+    session.set_dispatcher({
+        let session = session.clone();
+        move |frame| {
+            let service_impl = service.as_ref().clone();
+            let session = session.clone();
+            Box::pin(async move {
+                let server = HindsightServiceServer::new(service_impl);
+                server
+                    .dispatch(frame.desc.method_id, &frame, session.buffer_pool())
+                    .await
+            })
+        }
     });
 
     if let Err(e) = session.run().await {
@@ -348,12 +310,12 @@ async fn serve_pkg_file(
         "text/plain"
     };
 
-    // Read file from pkg directory
+    // Read file from pkg directory where wasm-pack builds
     // Try multiple possible paths (depends on where cargo run is executed from)
     let possible_paths = [
-        format!("pkg/{}", file),          // From workspace root
-        format!("../../pkg/{}", file),    // From target/debug
-        format!("../../../pkg/{}", file), // From target/debug/deps
+        format!("crates/hindsight-wasm/pkg/{}", file),          // From workspace root
+        format!("../../crates/hindsight-wasm/pkg/{}", file),    // From target/debug
+        format!("../../../crates/hindsight-wasm/pkg/{}", file), // From target/debug/deps
     ];
 
     for pkg_path in &possible_paths {

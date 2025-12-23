@@ -1,11 +1,10 @@
 //! Trace detail view component
 
 use hindsight_protocol::*;
-use rapace::{RpcSession, WebSocketTransport};
+use rapace::RpcSession;
 use std::collections::HashMap;
 use std::sync::Arc;
 use sycamore::prelude::*;
-use wasm_bindgen_futures::spawn_local;
 
 use crate::navigation::NavigationState;
 use crate::routing::Route;
@@ -84,77 +83,38 @@ impl SpanNode {
 
 /// Trace detail view - shows full trace information
 #[component]
-pub fn TraceDetail(props: TraceDetailProps) -> View {
+pub async fn TraceDetail(props: TraceDetailProps) -> View {
     let nav_state = props.nav_state;
     let trace_id = props.trace_id.clone();
+    let session = props.session;
 
-    let trace = create_signal(Option::<Trace>::None);
-    let loading = create_signal(true);
-    let error = create_signal(Option::<String>::None);
-
-    // Fetch trace on mount
-    {
-        let trace = trace.clone();
-        let loading = loading.clone();
-        let error = error.clone();
-        let trace_id = trace_id.clone();
-
-        create_effect(move || {
-            spawn_local(async move {
-                match init_client().await {
-                    Ok(client) => match client.get_trace(trace_id).await {
-                        Ok(Some(t)) => {
-                            // Defer signal updates to avoid borrow conflicts during render
-                            spawn_local(async move {
-                                trace.set(Some(t));
-                                loading.set(false);
-                            });
-                        }
-                        Ok(None) => {
-                            spawn_local(async move {
-                                error.set(Some("Trace not found".to_string()));
-                                loading.set(false);
-                            });
-                        }
-                        Err(e) => {
-                            spawn_local(async move {
-                                error.set(Some(format!("Error fetching trace: {:?}", e)));
-                                loading.set(false);
-                            });
-                        }
-                    },
-                    Err(e) => {
-                        spawn_local(async move {
-                            error.set(Some(format!("Connection error: {}", e)));
-                            loading.set(false);
-                        });
-                    }
-                }
-            });
-        });
-    }
+    // Fetch trace directly with async/await
+    let client = HindsightServiceClient::new(session);
+    let trace = client
+        .get_trace(trace_id.clone()).await
+        .expect("Failed to fetch trace")
+        .expect("Trace not found");
 
     // Back button handler
     let on_back = move |_| {
         nav_state.navigate_to(Route::TraceList);
     };
 
-    let title = create_memo(move || {
-        trace.with(|t| {
-            t.as_ref()
-                .and_then(|tr| tr.spans.iter().find(|s| s.span_id == tr.root_span_id))
-                .map(|s| s.name.clone())
-                .unwrap_or_else(|| "Trace Detail".to_string())
-        })
-    });
+    let title = trace
+        .spans
+        .iter()
+        .find(|s| s.span_id == trace.root_span_id)
+        .map(|s| s.name.clone())
+        .unwrap_or_else(|| "Trace Detail".to_string());
+
+    let nodes = SpanNode::from_trace(&trace);
+    let flat_spans: Vec<_> = nodes.iter().flat_map(|n| n.flatten()).collect();
 
     view! {
         div(class="trace-detail") {
             div(class="detail-header") {
                 button(class="btn", on:click=on_back) { "← Back" }
-                div(class="detail-title") {
-                    (title.with(|t| t.clone()))
-                }
+                div(class="detail-title") { (title) }
                 div(class="detail-meta") {
                     span(class="trace-meta-label") { "id:" }
                     " "
@@ -165,49 +125,18 @@ pub fn TraceDetail(props: TraceDetailProps) -> View {
             }
 
             div(class="detail-content") {
-                (if loading.with(|l| *l) {
-                    view! {
-                        div(class="loading") {
-                            div(class="spinner") {}
-                            "Loading trace..."
-                        }
+                div(class="waterfall") {
+                    div(class="waterfall-header") {
+                        div { "Operation" }
+                        div { "Service" }
+                        div { "Duration" }
                     }
-                } else if error.with(|e| e.is_some()) {
-                    let err_msg = error.with(|e| e.clone().unwrap_or_default());
-                    view! {
-                        div(class="placeholder") {
-                            p(style="color: var(--signal-error);") { (err_msg) }
-                        }
-                    }
-                } else {
-                    trace.with(|t| {
-                        if let Some(tr) = t.as_ref() {
-                            let nodes = SpanNode::from_trace(tr);
-                            let flat_spans: Vec<_> = nodes.iter().flat_map(|n| n.flatten()).collect();
-
-                            view! {
-                                div(class="waterfall") {
-                                    div(class="waterfall-header") {
-                                        div { "Operation" }
-                                        div { "Service" }
-                                        div { "Duration" }
-                                    }
-                                    (
-                                        flat_spans.clone().into_iter().map(|(span, depth, has_children)| {
-                                            span_row_view(span, depth, has_children)
-                                        }).collect::<Vec<_>>()
-                                    )
-                                }
-                            }
-                        } else {
-                            view! {
-                                div(class="placeholder") {
-                                    p { "No trace data" }
-                                }
-                            }
-                        }
-                    })
-                })
+                    (
+                        flat_spans.clone().into_iter().map(|(span, depth, has_children)| {
+                            span_row_view(span, depth, has_children)
+                        }).collect::<Vec<_>>()
+                    )
+                }
             }
         }
     }
@@ -255,39 +184,6 @@ fn span_row_view(span: Span, depth: usize, has_children: bool) -> View {
 pub struct TraceDetailProps {
     pub trace_id: TraceId,
     pub nav_state: NavigationState,
+    pub session: Arc<RpcSession>,
 }
 
-/// Initialize the Rapace client connection
-async fn init_client() -> Result<HindsightServiceClient, String> {
-    let protocol = if web_sys::window()
-        .and_then(|w| w.location().protocol().ok())
-        .map(|p| p == "https:")
-        .unwrap_or(false)
-    {
-        "wss:"
-    } else {
-        "ws:"
-    };
-
-    let host = web_sys::window()
-        .and_then(|w| w.location().host().ok())
-        .unwrap_or_else(|| "localhost:1990".to_string());
-
-    let url = format!("{}//{}/", protocol, host);
-
-    let ws = WebSocketTransport::connect(&url)
-        .await
-        .map_err(|e| format!("Transport error: {:?}", e))?;
-
-    let transport = rapace::Transport::WebSocket(ws);
-    let session = Arc::new(RpcSession::with_channel_start(transport, 2));
-
-    let session_clone = session.clone();
-    spawn_local(async move {
-        if let Err(e) = session_clone.run().await {
-            tracing::error!("Session error: {:?}", e);
-        }
-    });
-
-    Ok(HindsightServiceClient::new(session))
-}

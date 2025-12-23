@@ -19,13 +19,14 @@ rapace = { git = "https://github.com/bearcove/rapace", branch = "main", default-
 facet.workspace = true
 
 # Sycamore for reactive UI
-sycamore = { version = "0.9", features = ["web"] }
+sycamore = { version = "0.9", features = ["web", "suspense"] }
 
 # WASM bindings
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
 console_error_panic_hook = "0.1"
+gloo-timers = { version = "0.3", features = ["futures"] }
 
 # Tracing to browser console
 tracing = "0.1"

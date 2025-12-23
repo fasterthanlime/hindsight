@@ -7,8 +7,8 @@ type Result<T> = std::result::Result<T, anyhow::Error>;
 fn main() -> Result<()> {
     let task = env::args().nth(1);
     match task.as_deref() {
-        Some("serve") => serve(true),
-        Some("dev") => serve(false),
+        Some("serve") => serve(false),  // Dev mode for fast iteration
+        Some("release") => serve(true),  // Release mode when you need it
         _ => print_help(),
     }
 }
@@ -17,8 +17,8 @@ fn print_help() -> Result<()> {
     eprintln!(
         r#"
 Tasks:
-  serve      Build WASM (release), copy to server, and run with --seed
-  dev        Build WASM (dev), copy to server, and run with --seed (faster builds)
+  serve      Build WASM (dev), copy to server, and run with --seed (fast iteration)
+  release    Build WASM (release), copy to server, and run with --seed (optimized)
 "#
     );
     Ok(())
@@ -29,9 +29,6 @@ fn serve(release: bool) -> Result<()> {
 
     println!("📦 Building WASM frontend...");
     build_wasm(&project_root, release)?;
-
-    println!("📋 Copying WASM to server static directory...");
-    copy_wasm(&project_root)?;
 
     println!("🏗️  Building server binary...");
     build_server(&project_root, release)?;
@@ -66,7 +63,12 @@ fn build_wasm(project_root: &Path, release: bool) -> Result<()> {
 
 fn copy_wasm(project_root: &Path) -> Result<()> {
     let src = project_root.join("crates/hindsight-wasm/pkg");
-    let dest = project_root.join("crates/hindsight-server/static/wasm");
+    let dest = project_root.join("pkg");  // Server looks for pkg/ at workspace root!
+
+    // Remove old files to avoid serving stale WASM
+    if dest.exists() {
+        std::fs::remove_dir_all(&dest)?;
+    }
 
     // Create destination directory
     std::fs::create_dir_all(&dest)?;
